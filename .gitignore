@@ -1,0 +1,7 @@
+# local backups and old, unused artwork
+*.before-*
+Media/Wedge.tga
+Media/make_wedge.py
+
+# release builds
+dist/
