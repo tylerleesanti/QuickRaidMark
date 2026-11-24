@@ -1,4 +1,4 @@
-# Generates the two layers of QuickMark's hovered-slice highlight, each a
+# Generates the two layers of QuickRaidMark's hovered-slice highlight, each a
 # 256x256 32-bit TGA of a 45-degree slice pointing up from the texture centre
 # (drawn at 250 UI px in game, so 1 texture px is about 1 UI px):
 #   WedgeFill.tga    - plain white slice; tinted black in game to darken it

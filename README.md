@@ -1,10 +1,10 @@
-# QuickMark
+# QuickRaidMark
 
 A radial raid-marker menu for World of Warcraft. Hold a key, flick the mouse toward a marker, release. Works in combat.
 
 ## Setup
 
-Bind a key under **Options → Keybindings → AddOns → QuickMark → "Marker menu (hold, point, release)"**.
+Bind a key under **Options → Keybindings → AddOns → QuickRaidMark → "Marker menu (hold, point, release)"**.
 
 ## Using it
 
@@ -15,7 +15,7 @@ Bind a key under **Options → Keybindings → AddOns → QuickMark → "Marker 
 - **Number keys** while the menu is open pick a marker straight away:
   1 Skull, 2 Cross, 3 Square, 4 Moon, 5 Triangle, 6 Diamond, 7 Circle, 8 Star.
   The small number in each slice shows its key.
-- **No target?** QuickMark marks the unit under your cursor when you press the key, without leaving it targeted.
+- **No target?** QuickRaidMark marks the unit under your cursor when you press the key, without leaving it targeted.
 
 ### Ground markers
 

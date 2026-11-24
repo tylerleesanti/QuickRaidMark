@@ -1,4 +1,4 @@
--- QuickMark: hold a keybind to open a radial raid-marker menu centred on the
+-- QuickRaidMark: hold a keybind to open a radial raid-marker menu centred on the
 -- cursor, move the mouse toward a marker, and release the key to mark your
 -- current target with it.
 --
@@ -9,8 +9,8 @@
 -- game's /tm command for it. All of this works in combat.
 
 -- Labels shown in Options > Keybindings
-BINDING_HEADER_QUICKMARK = "QuickMark"
-_G["BINDING_NAME_CLICK QuickMarkToggle:LeftButton"] = "Marker menu (hold, point, release)"
+BINDING_HEADER_QUICKRAIDMARK = "QuickRaidMark"
+_G["BINDING_NAME_CLICK QuickRaidMarkToggle:LeftButton"] = "Marker menu (hold, point, release)"
 
 -- The game's "/tm" (target marker) slash command.
 local TARGET_MARKER_CMD = SLASH_TARGET_MARKER3 or "/tm"
@@ -88,7 +88,7 @@ local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local TAN_22_5 = 0.41421356 -- tan(22.5 degrees): half the width of each slice
 
 local function Print(msg)
-	print("|cff66ccffQuickMark:|r " .. msg)
+	print("|cff66ccffQuickRaidMark:|r " .. msg)
 end
 
 -- Explains why nothing happened, and returns true if the mark should have
@@ -140,13 +140,13 @@ end
 -- Screen-sized secure frame, used only to read the cursor position from
 -- inside secure snippets (works in combat).
 ----------------------------------------------------------------------
-local screen = CreateFrame("Frame", "QuickMarkScreen", UIParent, "SecureFrameTemplate")
+local screen = CreateFrame("Frame", "QuickRaidMarkScreen", UIParent, "SecureFrameTemplate")
 screen:SetAllPoints(UIParent)
 
 ----------------------------------------------------------------------
 -- Menu frame (display only; nothing in it is clickable)
 ----------------------------------------------------------------------
-local menu = CreateFrame("Frame", "QuickMarkMenu", UIParent, "SecureHandlerBaseTemplate")
+local menu = CreateFrame("Frame", "QuickRaidMarkMenu", UIParent, "SecureHandlerBaseTemplate")
 menu:SetFrameStrata("DIALOG")
 menu:SetSize(MENU_SIZE, MENU_SIZE)
 menu:Hide()
@@ -173,14 +173,14 @@ end
 local wedgeFill = menu:CreateTexture(nil, "BACKGROUND", nil, 1)
 wedgeFill:SetSize(WEDGE_TEXTURE_SIZE, WEDGE_TEXTURE_SIZE)
 wedgeFill:SetPoint("CENTER")
-wedgeFill:SetTexture("Interface\\AddOns\\QuickMark\\Media\\WedgeFill")
+wedgeFill:SetTexture("Interface\\AddOns\\QuickRaidMark\\Media\\WedgeFill")
 wedgeFill:SetVertexColor(0, 0, 0, WEDGE_ALPHA) -- white slice tinted black
 wedgeFill:Hide()
 
 local wedgeOutline = menu:CreateTexture(nil, "BORDER", nil, 1) -- above the divider lines
 wedgeOutline:SetSize(WEDGE_TEXTURE_SIZE, WEDGE_TEXTURE_SIZE)
 wedgeOutline:SetPoint("CENTER")
-wedgeOutline:SetTexture("Interface\\AddOns\\QuickMark\\Media\\WedgeOutline")
+wedgeOutline:SetTexture("Interface\\AddOns\\QuickRaidMark\\Media\\WedgeOutline")
 wedgeOutline:SetBlendMode("ADD")
 wedgeOutline:Hide()
 
@@ -394,7 +394,7 @@ end
 ----------------------------------------------------------------------
 -- The keybind button (see Bindings.xml). Hold = show menu, release = mark.
 ----------------------------------------------------------------------
-local toggle = CreateFrame("Button", "QuickMarkToggle", UIParent, "SecureActionButtonTemplate")
+local toggle = CreateFrame("Button", "QuickRaidMarkToggle", UIParent, "SecureActionButtonTemplate")
 toggle:RegisterForClicks("AnyUp", "AnyDown")
 toggle:SetAttribute("useOnKeyDown", false) -- run the action on release
 toggle:SetAttribute("type", "macro")
@@ -414,7 +414,7 @@ SecureHandlerSetFrameRef(toggle, "screen", screen)
 -- markers (the "ground" attribute on the keybind button). The choice stays
 -- until Ctrl flips it back, so the menu reopens on the set used last.
 -- A secure state driver watches Ctrl, so this works in combat.
-local ctrlWatcher = CreateFrame("Frame", "QuickMarkCtrlWatcher", UIParent, "SecureHandlerStateTemplate")
+local ctrlWatcher = CreateFrame("Frame", "QuickRaidMarkCtrlWatcher", UIParent, "SecureHandlerStateTemplate")
 SecureHandlerSetFrameRef(ctrlWatcher, "toggle", toggle)
 SecureHandlerSetFrameRef(ctrlWatcher, "menu", menu)
 ctrlWatcher:SetAttribute("_onstate-ctrl", [[
@@ -490,8 +490,8 @@ SecureHandlerWrapScript(toggle, "OnClick", menu, ([[
 		-- number keys 1-8 pick a marker while the menu is open
 		-- (also bound with Ctrl, in case Ctrl is still held after flipping)
 		for i = 1, 8 do
-			owner:SetBindingClick(true, "" .. i, "QuickMarkNumber" .. i)
-			owner:SetBindingClick(true, "CTRL-" .. i, "QuickMarkNumber" .. i)
+			owner:SetBindingClick(true, "" .. i, "QuickRaidMarkNumber" .. i)
+			owner:SetBindingClick(true, "CTRL-" .. i, "QuickRaidMarkNumber" .. i)
 		end
 		if borrow then
 			self:SetAttribute("borrowed", true)
@@ -598,7 +598,7 @@ local function SlotForMarker(markerIndex)
 end
 
 for key, markerIndex in ipairs(NUMBER_KEY_MARKER) do
-	local button = CreateFrame("Button", "QuickMarkNumber" .. key, UIParent, "SecureActionButtonTemplate")
+	local button = CreateFrame("Button", "QuickRaidMarkNumber" .. key, UIParent, "SecureActionButtonTemplate")
 	button:RegisterForClicks("AnyDown")
 	button:SetAttribute("useOnKeyDown", true)
 	button:SetAttribute("type", "macro")
