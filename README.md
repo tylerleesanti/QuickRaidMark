@@ -19,7 +19,7 @@ Bind a key under **Options → Keybindings → AddOns → QuickRaidMark → "Qui
 
 ### Ground markers
 
-- **Press Ctrl** while the menu is open to switch between raid and ground markers. The label under the menu shows which set is active, and the menu remembers it until you press Ctrl again. Prefer Alt or Shift? Click the minimap button and pick one under **Raid/ground swap key** in the settings window. Raid markers are the default: after 5 minutes without using the menu, it goes back to raid markers.
+- **Press Ctrl** while the menu is open to switch between raid and ground markers. The label under the menu shows which set is active, and the menu remembers it until you press Ctrl again. Prefer Alt or Shift? Click the minimap button and pick one under **Raid/ground swap key** in the settings window. Raid markers are the default: after 5 minutes without using the menu, it goes back to raid markers. Ground markers need a party or raid, so on your own the swap key does nothing, and leaving a group puts the menu back on raid markers.
 - On ground markers the menu turns dark brown and each marker sits on a coloured circle, so you can tell the sets apart at a glance.
 - On ground markers, releasing (or a number key) gives you a targeting circle: click the ground where the marker goes. Key 9 removes all ground markers. After using number keys, releasing over the clear slot still removes all ground markers.
 - The clear slot removes all ground markers.

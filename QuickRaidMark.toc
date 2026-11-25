@@ -2,7 +2,7 @@
 ## Title: QuickRaidMark
 ## Notes: Hold a keybind to open a radial marker menu at your cursor. Point and release to mark your target, or place ground markers.
 ## Author: Tyler Santi
-## Version: 1.2.0
+## Version: 1.2.1
 ## X-License: MIT
 ## Category-enUS: Combat
 ## SavedVariables: QuickRaidMarkDB

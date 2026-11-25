@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- **Ground markers need a group.** Ground markers only work in a party or raid, so when you're on your own the swap key does nothing and the menu stays on raid markers. Leaving a group switches the menu back to raid markers.
+
 ## 1.2.0
 
 ### New

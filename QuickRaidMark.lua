@@ -585,9 +585,11 @@ SecureHandlerSetFrameRef(toggle, "screen", screen)
 -- stays until the swap key flips it back, so the menu reopens on the set
 -- used last. A secure state driver watches the key, so this works in combat.
 local SWAP_KEYS = {
-	CTRL  = { label = "Ctrl",  condition = "[mod:ctrl] down; up" },
-	ALT   = { label = "Alt",   condition = "[mod:alt] down; up" },
-	SHIFT = { label = "Shift", condition = "[mod:shift] down; up" },
+	-- ("[nogroup] up" first: ground markers need a party or raid, so the
+	-- swap key does nothing while you're on your own)
+	CTRL  = { label = "Ctrl",  condition = "[nogroup] up; [mod:ctrl] down; up" },
+	ALT   = { label = "Alt",   condition = "[nogroup] up; [mod:alt] down; up" },
+	SHIFT = { label = "Shift", condition = "[nogroup] up; [mod:shift] down; up" },
 }
 local SWAP_KEY_ORDER = { "CTRL", "ALT", "SHIFT" }
 local swapKey = "CTRL"
@@ -604,6 +606,18 @@ ctrlWatcher:SetAttribute("_onstate-swap", [[
 	toggle:SetAttribute("ground", not toggle:GetAttribute("ground"))
 ]])
 RegisterStateDriver(ctrlWatcher, "swap", SWAP_KEYS[swapKey].condition)
+
+-- Ground markers only work in a party or raid. Leaving the group (or
+-- logging in solo) puts the menu back on raid markers. A secure state
+-- driver, so it works in combat too.
+local groupWatcher = CreateFrame("Frame", "QuickRaidMarkGroupWatcher", UIParent, "SecureHandlerStateTemplate")
+SecureHandlerSetFrameRef(groupWatcher, "toggle", toggle)
+groupWatcher:SetAttribute("_onstate-group", [[
+	if newstate == "solo" then
+		self:GetFrameRef("toggle"):SetAttribute("ground", nil)
+	end
+]])
+RegisterStateDriver(groupWatcher, "group", "[group] grouped; solo")
 
 -- Shows which set the menu is on: a label just under the menu.
 local modeLabel = ringLayer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -624,6 +638,8 @@ local function ShowMode(ground)
 		else
 			hintLabel:SetText("Release the key to close")
 		end
+	elseif not IsInGroup() then
+		hintLabel:SetText("Ground markers need a party or raid")
 	elseif ground then
 		hintLabel:SetText("Press " .. SWAP_KEYS[swapKey].label .. " for raid markers")
 	else
@@ -638,6 +654,14 @@ local function ShowMode(ground)
 	end
 end
 ShowMode(false)
+
+-- Joining or leaving a group changes the hint.
+local groupEvents = CreateFrame("Frame")
+groupEvents:RegisterEvent("GROUP_ROSTER_UPDATE")
+groupEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+groupEvents:SetScript("OnEvent", function()
+	ShowMode(QuickRaidMarkToggle:GetAttribute("ground"))
+end)
 
 toggle:HookScript("OnAttributeChanged", function(_, name, value)
 	if name == "ground" or name == "numberused" then
@@ -703,6 +727,9 @@ SecureHandlerWrapScript(toggle, "OnClick", menu, ([[
 			owner:SetBindingClick(true, "" .. i, "QuickRaidMarkNumber" .. i)
 			owner:SetBindingClick(true, self:GetAttribute("swapprefix") .. i, "QuickRaidMarkNumber" .. i)
 		end
+		-- hidden extra: 0 drops every ground marker at the cursor
+		owner:SetBindingClick(true, "0", "QuickRaidMarkAllGround")
+		owner:SetBindingClick(true, self:GetAttribute("swapprefix") .. "0", "QuickRaidMarkAllGround")
 		if borrow then
 			self:SetAttribute("borrowed", true)
 			self:SetAttribute("useOnKeyDown", true) -- run this one on key-down
@@ -873,6 +900,41 @@ for key, markerIndex in ipairs(NUMBER_KEY_MARKER) do
 end
 
 ----------------------------------------------------------------------
+-- Hidden extra: on ground markers, pressing 0 while the menu is open drops
+-- ALL eight ground markers in one spot, right where the cursor is (no
+-- targeting circle to click). Does nothing on raid markers.
+----------------------------------------------------------------------
+do
+	local lines = {}
+	for g = 1, 8 do
+		lines[#lines + 1] = WORLD_MARKER_CMD .. " [@cursor] " .. g
+	end
+
+	local button = CreateFrame("Button", "QuickRaidMarkAllGround", UIParent, "SecureActionButtonTemplate")
+	button:RegisterForClicks("AnyDown")
+	button:SetAttribute("useOnKeyDown", true)
+	button:SetAttribute("type", "macro")
+	button:SetAttribute("macrotext", table.concat(lines, "\n"))
+	SecureHandlerSetFrameRef(button, "toggle", toggle)
+
+	SecureHandlerWrapScript(button, "OnClick", menu, [[
+		self:SetAttribute("fired", nil)
+		if not owner:IsShown() then return false end
+		local toggle = self:GetFrameRef("toggle")
+		if not toggle:GetAttribute("ground") then return false end
+		-- like the number keys: releasing the menu key then just closes it
+		toggle:SetAttribute("numberused", true)
+		self:SetAttribute("fired", true)
+	]])
+
+	button:SetScript("PostClick", function(self)
+		if self:GetAttribute("fired") and WarnIfCannotMark(false, true) then
+			PlayPulse(0) -- the centre
+		end
+	end)
+end
+
+----------------------------------------------------------------------
 -- Raid markers are the default: after IDLE_RESET seconds without using the
 -- menu, it switches back from ground markers to raid markers.
 --
@@ -892,6 +954,7 @@ toggle:HookScript("PreClick", NoteUse)
 for key = 1, #NUMBER_KEY_MARKER do
 	_G["QuickRaidMarkNumber" .. key]:HookScript("PreClick", NoteUse)
 end
+QuickRaidMarkAllGround:HookScript("PreClick", NoteUse)
 toggle:HookScript("OnAttributeChanged", function(_, name)
 	if name == "ground" then NoteUse() end -- swap-key flips count as use
 end)

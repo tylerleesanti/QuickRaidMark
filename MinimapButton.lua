@@ -53,7 +53,7 @@ local window
 
 local function BuildWindow()
 	local f = CreateFrame("Frame", "QuickRaidMarkSettings", UIParent, "BackdropTemplate")
-	f:SetSize(270, 200)
+	f:SetSize(270, 205)
 	f:SetPoint("CENTER", 0, 100)
 	f:SetFrameStrata("DIALOG")
 	f:SetClampedToScreen(true)
@@ -98,12 +98,13 @@ local function BuildWindow()
 
 	-- Swap key: three radio buttons in a row.
 	local swapHeader = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	swapHeader:SetPoint("TOPLEFT", 24, -104)
+	swapHeader:SetPoint("TOPLEFT", 24, -100)
 	swapHeader:SetText("Raid/ground swap key")
 
 	local swapNote = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	swapNote:SetPoint("TOPLEFT", swapHeader, "BOTTOMLEFT", 0, -4)
-	swapNote:SetText("Press it while the menu is open to switch sets.")
+	swapNote:SetJustifyH("LEFT")
+	swapNote:SetText("Press it while the menu is open to switch sets.\nGround markers need a party or raid.")
 	swapNote:SetTextColor(0.75, 0.75, 0.75)
 
 	local radios = {}
@@ -125,7 +126,7 @@ local function BuildWindow()
 	for i, k in ipairs(ns.SWAP_KEY_ORDER) do
 		local radio = CreateFrame("CheckButton", nil, f, "UIRadioButtonTemplate")
 		radio:SetSize(20, 20)
-		radio:SetPoint("TOPLEFT", 24 + (i - 1) * 76, -144)
+		radio:SetPoint("TOPLEFT", 24 + (i - 1) * 76, -150)
 		-- own label (and a wider click area that includes it)
 		local label = radio:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 		label:SetPoint("LEFT", radio, "RIGHT", 4, 0)
