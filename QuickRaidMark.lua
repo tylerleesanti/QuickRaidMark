@@ -10,7 +10,7 @@
 
 -- Labels shown in Options > Keybindings
 BINDING_HEADER_QUICKRAIDMARK = "QuickRaidMark"
-_G["BINDING_NAME_CLICK QuickRaidMarkToggle:LeftButton"] = "Marker menu (hold, point, release)"
+_G["BINDING_NAME_CLICK QuickRaidMarkToggle:LeftButton"] = "Quick Raid Mark Menu"
 
 -- The game's "/tm" (target marker) slash command.
 local TARGET_MARKER_CMD = SLASH_TARGET_MARKER3 or "/tm"
@@ -151,13 +151,21 @@ menu:SetFrameStrata("DIALOG")
 menu:SetSize(MENU_SIZE, MENU_SIZE)
 menu:Hide()
 
+-- Everything outside the centre (slice highlight, divider lines, ring icons,
+-- key numbers, labels) sits on this layer, so the opening animation can
+-- fade it in as one piece after the centre has appeared.
+local ringLayer = CreateFrame("Frame", nil, menu)
+ringLayer:SetAllPoints()
+
 -- Round dark background, one even shade. It and the faint lines fade back
--- (see SetHovered) while a slice is pointed at.
+-- (see SetHovered) while a slice is pointed at. It grows out from the centre
+-- when the menu opens (see ApplyOpen).
 local backdrop = {}
+local disc = menu:CreateTexture(nil, "BACKGROUND")
 do
-	local disc = menu:CreateTexture(nil, "BACKGROUND")
 	backdrop[#backdrop + 1] = disc
-	disc:SetAllPoints()
+	disc:SetSize(MENU_SIZE, MENU_SIZE)
+	disc:SetPoint("CENTER")
 	disc:SetColorTexture(0, 0, 0, BACKGROUND_ALPHA)
 
 	local mask = menu:CreateMaskTexture()
@@ -170,14 +178,14 @@ end
 -- gold outline. Both textures are a slice pointing straight up from the menu
 -- centre and are rotated to each slice.
 -- (Media/make_wedge_layers.py regenerates them if they need restyling.)
-local wedgeFill = menu:CreateTexture(nil, "BACKGROUND", nil, 1)
+local wedgeFill = ringLayer:CreateTexture(nil, "BACKGROUND", nil, 1)
 wedgeFill:SetSize(WEDGE_TEXTURE_SIZE, WEDGE_TEXTURE_SIZE)
 wedgeFill:SetPoint("CENTER")
 wedgeFill:SetTexture("Interface\\AddOns\\QuickRaidMark\\Media\\WedgeFill")
 wedgeFill:SetVertexColor(0, 0, 0, WEDGE_ALPHA) -- white slice tinted black
 wedgeFill:Hide()
 
-local wedgeOutline = menu:CreateTexture(nil, "BORDER", nil, 1) -- above the divider lines
+local wedgeOutline = ringLayer:CreateTexture(nil, "BORDER", nil, 1) -- above the divider lines
 wedgeOutline:SetSize(WEDGE_TEXTURE_SIZE, WEDGE_TEXTURE_SIZE)
 wedgeOutline:SetPoint("CENTER")
 wedgeOutline:SetTexture("Interface\\AddOns\\QuickRaidMark\\Media\\WedgeOutline")
@@ -194,7 +202,7 @@ local wedge = {
 for i = 0, #MARKER_ORDER - 1 do
 	local angle = math.rad(90 - 22.5 - i * (360 / #MARKER_ORDER))
 	local cosA, sinA = math.cos(angle), math.sin(angle)
-	local line = menu:CreateLine(nil, "BORDER")
+	local line = ringLayer:CreateLine(nil, "BORDER")
 	backdrop[#backdrop + 1] = line
 	line:SetThickness(2)
 	line:SetColorTexture(1, 1, 1, 0.12)
@@ -213,13 +221,13 @@ for i, markerIndex in ipairs(MARKER_ORDER) do
 	local texturePath = MarkerTexture(markerIndex)
 
 	local size = IconSize(markerIndex, RING_ICON_SIZE)
-	local icon = menu:CreateTexture(nil, "ARTWORK")
+	local icon = ringLayer:CreateTexture(nil, "ARTWORK")
 	icon:SetSize(size, size)
 	icon:SetPoint("CENTER", menu, "CENTER", cosA * RING_RADIUS, sinA * RING_RADIUS)
 	icon:SetTexture(texturePath)
 
 	-- Additive copy of the icon, shown while pointed at, to make it glow.
-	local glow = menu:CreateTexture(nil, "OVERLAY")
+	local glow = ringLayer:CreateTexture(nil, "OVERLAY")
 	glow:SetAllPoints(icon)
 	glow:SetTexture(texturePath)
 	glow:SetBlendMode("ADD")
@@ -227,19 +235,16 @@ for i, markerIndex in ipairs(MARKER_ORDER) do
 	glow:Hide()
 
 	-- Small number on the inner side of the slice: the number key for this
-	-- marker (keys run 1 Skull ... 8 Star, i.e. key = 9 - marker). Skull is
-	-- in the centre and the clear slot has no key, so neither gets one.
-	local keyLabel
-	if markerIndex ~= 0 then
-		keyLabel = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-		keyLabel:SetPoint("CENTER", menu, "CENTER", cosA * KEY_LABEL_RADIUS, sinA * KEY_LABEL_RADIUS)
-		keyLabel:SetText(9 - markerIndex)
-		keyLabel:SetTextColor(0.85, 0.85, 0.85)
-		keyLabel:SetShadowOffset(1, -1)
-	end
+	-- marker (keys run 1 Skull ... 8 Star, 9 clear, i.e. key = 9 - marker).
+	-- Skull is in the centre, so it has no label (its key is 1).
+	local keyLabel = ringLayer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	keyLabel:SetPoint("CENTER", menu, "CENTER", cosA * KEY_LABEL_RADIUS, sinA * KEY_LABEL_RADIUS)
+	keyLabel:SetText(9 - markerIndex)
+	keyLabel:SetTextColor(0.85, 0.85, 0.85)
+	keyLabel:SetShadowOffset(1, -1)
 
 	slots[i] = { icon = icon, glow = glow, size = size, keyLabel = keyLabel,
-		x = cosA * RING_RADIUS, y = sinA * RING_RADIUS }
+		cos = cosA, sin = sinA, x = cosA * RING_RADIUS, y = sinA * RING_RADIUS }
 end
 
 ----------------------------------------------------------------------
@@ -250,6 +255,7 @@ local CENTRE_ICON_SIZE = IconSize(CENTRE_MARKER)
 local CENTRE_CIRCLE_SEGMENTS = 40
 
 local centre = CreateFrame("Frame", nil, menu)
+centre:SetFrameLevel(ringLayer:GetFrameLevel() + 1)
 centre:SetSize(LINE_INNER * 2, LINE_INNER * 2)
 centre:SetPoint("CENTER")
 
@@ -263,7 +269,7 @@ centreIcon:SetTexture(MarkerTexture(CENTRE_MARKER))
 for i = 0, CENTRE_CIRCLE_SEGMENTS - 1 do
 	local a1 = math.rad(i * 360 / CENTRE_CIRCLE_SEGMENTS)
 	local a2 = math.rad((i + 1) * 360 / CENTRE_CIRCLE_SEGMENTS)
-	local seg = menu:CreateLine(nil, "BORDER")
+	local seg = centre:CreateLine(nil, "BORDER") -- fades in with the centre
 	backdrop[#backdrop + 1] = seg
 	seg:SetThickness(2)
 	seg:SetColorTexture(1, 1, 1, 0.12)
@@ -281,64 +287,109 @@ centreGlow:Hide()
 ----------------------------------------------------------------------
 -- Live highlight of whatever the mouse is pointing at (visual only)
 ----------------------------------------------------------------------
-local hoveredSlot = false -- false = nothing drawn yet, nil = centre
+local hoveredSlot = false -- false = nothing drawn yet, nil = centre,
+                          -- 0 = nothing highlighted (number keys used)
 
 local function SetHovered(slot)
 	if slot == hoveredSlot then
 		return
 	end
-	if hoveredSlot then
+	if hoveredSlot and hoveredSlot > 0 then
 		local old = slots[hoveredSlot]
 		old.icon:SetSize(old.size, old.size)
 		old.glow:Hide()
 	end
-	if slot then
-		local new = slots[slot]
+	local ring = slot and slot > 0 and slot or nil -- the ring slot to light up
+	if ring then
+		local new = slots[ring]
 		new.icon:SetSize(new.size * HOVER_SCALE, new.size * HOVER_SCALE)
 		new.glow:Show()
 		-- Slot 1 is the top; each later slot is 45 degrees further clockwise.
-		wedge:SetRotation(-math.rad((slot - 1) * (360 / #MARKER_ORDER)))
+		wedge:SetRotation(-math.rad((ring - 1) * (360 / #MARKER_ORDER)))
 		wedge:Show()
 	else
 		wedge:Hide()
 	end
 	-- While a ring slice is pointed at, every other icon fades back.
 	for i, s in ipairs(slots) do
-		local a = (slot and i ~= slot) and DIM_ALPHA or 1
+		local a = (ring and i ~= ring) and DIM_ALPHA or 1
 		s.icon:SetAlpha(a)
 		if s.keyLabel then s.keyLabel:SetAlpha(a) end
 	end
-	centreIcon:SetAlpha(slot and DIM_ALPHA or 1)
+	centreIcon:SetAlpha(ring and DIM_ALPHA or 1)
 	for _, region in ipairs(backdrop) do
-		region:SetAlpha(slot and BACKDROP_DIM_ALPHA or 1)
+		region:SetAlpha(ring and BACKDROP_DIM_ALPHA or 1)
 	end
 	centreGlow:SetShown(slot == nil)
 	hoveredSlot = slot
 end
 
--- Fade in over FADE_IN_TIME seconds after the menu opens. (Only the alpha
--- changes, which addon code may do in combat; showing, hiding and placing
--- the menu stay with the secure snippet.)
-local FADE_IN_TIME = 0.12
-local fadeElapsed = FADE_IN_TIME
+-- Opening animation, over OPEN_TIME seconds: the centre Skull pops in
+-- first, the dark background grows out from the centre and darkens, and
+-- then the ring (icons, lines, numbers, labels) fades in while sliding out
+-- to its place. (Only sizes, positions and alpha of plain textures change,
+-- which addon code may do in combat; showing, hiding and placing the menu
+-- itself stay with the secure snippet.)
+local OPEN_TIME   = 0.30 -- seconds for the whole opening
+local RING_DELAY  = 0.25 -- fraction of OPEN_TIME before the ring starts to appear
+local RING_START  = 0.60 -- the ring starts at this fraction of its full radius
+local openElapsed = OPEN_TIME
 local menuX, menuY -- where the menu was last shown, for the confirmation pulse
 
+local function EaseOut(t)
+	return 1 - (1 - t) * (1 - t)
+end
+
+-- p: 0 = just opened, 1 = fully open.
+local function ApplyOpen(p)
+	local e = EaseOut(p)
+
+	-- Centre: quick fade and pop over the first part of the opening.
+	local c = EaseOut(math.min(1, p / 0.4))
+	centre:SetAlpha(c)
+	local cs = CENTRE_ICON_SIZE * (0.6 + 0.4 * c)
+	centreIcon:SetSize(cs, cs)
+
+	-- Background: grows from the centre circle out to full size, darkening.
+	local d = LINE_INNER * 2 + (MENU_SIZE - LINE_INNER * 2) * e
+	disc:SetSize(d, d)
+	disc:SetColorTexture(0, 0, 0, BACKGROUND_ALPHA * (0.3 + 0.7 * e))
+
+	-- Ring: fades in and slides outward, starting a moment later.
+	local r = EaseOut(math.max(0, math.min(1, (p - RING_DELAY) / (1 - RING_DELAY))))
+	ringLayer:SetAlpha(r)
+	local spread = RING_START + (1 - RING_START) * r
+	for _, s in ipairs(slots) do
+		s.icon:SetPoint("CENTER", menu, "CENTER", s.cos * RING_RADIUS * spread, s.sin * RING_RADIUS * spread)
+		s.keyLabel:SetPoint("CENTER", menu, "CENTER", s.cos * KEY_LABEL_RADIUS * spread, s.sin * KEY_LABEL_RADIUS * spread)
+	end
+end
+
 menu:SetScript("OnUpdate", function(self, elapsed)
-	if fadeElapsed < FADE_IN_TIME then
-		fadeElapsed = fadeElapsed + elapsed
-		self:SetAlpha(math.min(1, fadeElapsed / FADE_IN_TIME))
+	if openElapsed < OPEN_TIME then
+		openElapsed = openElapsed + elapsed
+		ApplyOpen(math.min(1, openElapsed / OPEN_TIME))
 	end
 
 	local cx, cy = self:GetCenter()
 	if not cx then return end
 	menuX, menuY = cx, cy
+	-- After a number key, releasing won't mark by direction, so stop
+	-- highlighting slices (the mouse is off pointing at mobs anyway).
+	if QuickRaidMarkToggle:GetAttribute("numberused") then
+		SetHovered(0)
+		return
+	end
 	local x, y = GetCursorPosition()
 	local scale = self:GetEffectiveScale()
 	SetHovered(SlotFromOffset(x / scale - cx, y / scale - cy))
 end)
+local menuOpenedAt = 0 -- GetTime() when the menu last opened
+
 menu:HookScript("OnShow", function(self)
-	fadeElapsed = 0
-	self:SetAlpha(0)
+	menuOpenedAt = GetTime()
+	openElapsed = 0
+	ApplyOpen(0)
 	hoveredSlot = false
 	SetHovered(nil)
 end)
@@ -348,6 +399,9 @@ end)
 -- the menu. A plain (not secure) frame, so it can play in combat.
 ----------------------------------------------------------------------
 local PULSE_TIME  = 0.35
+-- Menu open for less than this many seconds (a quick tap for Skull):
+-- skip the pulse when the key is released.
+local QUICK_TAP_TIME = 0.25
 local PULSE_SCALE = 1.8
 
 local pulse = CreateFrame("Frame", nil, UIParent)
@@ -427,32 +481,37 @@ ctrlWatcher:SetAttribute("_onstate-ctrl", [[
 RegisterStateDriver(ctrlWatcher, "ctrl", "[mod:ctrl] down; up")
 
 -- Shows which set the menu is on: a label just under the menu.
-local modeLabel = menu:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+local modeLabel = ringLayer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 modeLabel:SetPoint("TOP", menu, "BOTTOM", 0, -4)
 modeLabel:SetShadowOffset(1, -1)
 
 -- Hint just above the menu.
-local hintLabel = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+local hintLabel = ringLayer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 hintLabel:SetPoint("BOTTOM", menu, "TOP", 0, 4)
 hintLabel:SetShadowOffset(1, -1)
 hintLabel:SetTextColor(0.8, 0.8, 0.8)
 
 local function ShowMode(ground)
+	if QuickRaidMarkToggle:GetAttribute("numberused") then
+		hintLabel:SetText("Release the key to close")
+	elseif ground then
+		hintLabel:SetText("Press Ctrl for raid markers")
+	else
+		hintLabel:SetText("Press Ctrl for ground markers")
+	end
 	if ground then
 		modeLabel:SetText("Ground markers")
 		modeLabel:SetTextColor(0.55, 0.85, 1)
-		hintLabel:SetText("Press Ctrl for raid markers")
 	else
 		modeLabel:SetText("Raid markers")
 		modeLabel:SetTextColor(1, 0.82, 0)
-		hintLabel:SetText("Press Ctrl for ground markers")
 	end
 end
 ShowMode(false)
 
 toggle:HookScript("OnAttributeChanged", function(_, name, value)
-	if name == "ground" then
-		ShowMode(value)
+	if name == "ground" or name == "numberused" then
+		ShowMode(toggle:GetAttribute("ground"))
 	end
 end)
 
@@ -482,14 +541,15 @@ SecureHandlerWrapScript(toggle, "OnClick", menu, ([[
 		centreX, centreY = x, y
 		self:SetAttribute("lastslot", nil)
 		self:SetAttribute("borrowed", nil)
+		self:SetAttribute("numberused", nil)
 		-- (checked before the menu shows, since the menu takes the mouse)
 		local borrow = SecureCmdOptionParse("[@target,exists] no; [@mouseover,exists] yes; no") == "yes"
 		owner:ClearAllPoints()
 		owner:SetPoint("CENTER", screen, "BOTTOMLEFT", x, y)
 		owner:Show()
-		-- number keys 1-8 pick a marker while the menu is open
+		-- number keys 1-9 mark the unit under the mouse while the menu is open
 		-- (also bound with Ctrl, in case Ctrl is still held after flipping)
-		for i = 1, 8 do
+		for i = 1, 9 do
 			owner:SetBindingClick(true, "" .. i, "QuickRaidMarkNumber" .. i)
 			owner:SetBindingClick(true, "CTRL-" .. i, "QuickRaidMarkNumber" .. i)
 		end
@@ -510,6 +570,13 @@ SecureHandlerWrapScript(toggle, "OnClick", menu, ([[
 		after = "\n/cleartarget"
 		-- if nothing gets marked below, still give the target back
 		self:SetAttribute("macrotext", "/cleartarget")
+	end
+
+	-- Number keys were used while the menu was open: just close it.
+	if self:GetAttribute("numberused") then
+		owner:Hide()
+		if after == "" then return false end
+		return
 	end
 
 	-- Close the menu and mark whatever the mouse points at.
@@ -574,20 +641,23 @@ toggle:SetScript("PostClick", function(self, _, down)
 	-- is blocked in combat. The secure snippet resets it on each key press.)
 	if down then return end
 	local slot = self:GetAttribute("lastslot")
-	if slot and WarnIfCannotMark(self:GetAttribute("borrowed"), self:GetAttribute("ground")) then
+	if slot and WarnIfCannotMark(self:GetAttribute("borrowed"), self:GetAttribute("ground"))
+			and GetTime() - menuOpenedAt >= QUICK_TAP_TIME then
 		PlayPulse(slot)
 	end
 end)
 
 ----------------------------------------------------------------------
--- Number keys: while the menu is open, 1-8 are bound (by the secure snippet
--- above) to these hidden buttons. Pressing one closes the menu and marks at
--- once (on whichever set the menu is on). Releasing the
--- menu key afterwards does nothing more.
+-- Number keys: while the menu is open, 1-9 are bound (by the secure snippet
+-- above) to these hidden buttons. Each press marks the unit under the mouse
+-- (or your target if the mouse isn't over a unit) and the menu STAYS OPEN,
+-- so you can point at one mob after another and mark them all in one go.
+-- Once a number key has been used, releasing the menu key just closes the
+-- menu; it does not also mark by direction.
 ----------------------------------------------------------------------
 -- Key number -> raid marker: 1 Skull, 2 Cross, 3 Square, 4 Moon,
--- 5 Triangle, 6 Diamond, 7 Circle, 8 Star.
-local NUMBER_KEY_MARKER = { 8, 7, 6, 5, 4, 3, 2, 1 }
+-- 5 Triangle, 6 Diamond, 7 Circle, 8 Star, 9 clear.
+local NUMBER_KEY_MARKER = { 8, 7, 6, 5, 4, 3, 2, 1, 0 }
 
 -- Where a marker sits in the menu, for the pulse: 0 = centre, else ring slot.
 local function SlotForMarker(markerIndex)
@@ -610,19 +680,24 @@ for key, markerIndex in ipairs(NUMBER_KEY_MARKER) do
 	SecureHandlerWrapScript(button, "OnClick", menu, [[
 		self:SetAttribute("fired", nil)
 		if not owner:IsShown() then return false end
-		owner:Hide()
-		owner:ClearBindings()
 
 		local toggle = self:GetFrameRef("toggle")
+		-- tells the menu key's release not to mark by direction as well
+		toggle:SetAttribute("numberused", true)
+
 		local ground = toggle:GetAttribute("ground") -- the set the menu is on
 		local command
 		if ground then
-			command = toggle:GetAttribute("wmcmd") .. " " .. self:GetAttribute("groundmarker")
+			local g = self:GetAttribute("groundmarker")
+			if g == 0 then
+				command = toggle:GetAttribute("cwmcmd") .. " all"
+			else
+				command = toggle:GetAttribute("wmcmd") .. " " .. g
+			end
 		else
-			command = toggle:GetAttribute("tmcmd") .. " " .. self:GetAttribute("marker")
-		end
-		if toggle:GetAttribute("borrowed") then
-			command = command .. "\n/cleartarget"
+			-- the unit under the mouse, or the target if there isn't one
+			local m = self:GetAttribute("marker")
+			command = toggle:GetAttribute("tmcmd") .. " [@mouseover,exists] " .. m .. "; " .. m
 		end
 		self:SetAttribute("fired", true)
 		self:SetAttribute("macrotext", command)
@@ -630,8 +705,46 @@ for key, markerIndex in ipairs(NUMBER_KEY_MARKER) do
 
 	button:SetScript("PostClick", function(self)
 		if not self:GetAttribute("fired") then return end
-		if WarnIfCannotMark(toggle:GetAttribute("borrowed"), toggle:GetAttribute("ground")) then
+		local hadUnit = toggle:GetAttribute("borrowed") or UnitExists("mouseover")
+		if WarnIfCannotMark(hadUnit, toggle:GetAttribute("ground")) then
 			PlayPulse(SlotForMarker(markerIndex))
 		end
 	end)
 end
+
+----------------------------------------------------------------------
+-- Raid markers are the default: after IDLE_RESET seconds without using the
+-- menu, it switches back from ground markers to raid markers.
+--
+-- The set lives in a secure attribute, which normal addon code may only
+-- change out of combat. So the check runs every few seconds out of combat,
+-- and once more right as combat starts (the last moment it is allowed).
+-- If the five minutes run out mid-combat, the switch happens when combat
+-- ends.
+----------------------------------------------------------------------
+local IDLE_RESET = 300 -- seconds (5 minutes)
+local lastUse = GetTime()
+
+local function NoteUse()
+	lastUse = GetTime()
+end
+toggle:HookScript("PreClick", NoteUse)
+for key = 1, #NUMBER_KEY_MARKER do
+	_G["QuickRaidMarkNumber" .. key]:HookScript("PreClick", NoteUse)
+end
+toggle:HookScript("OnAttributeChanged", function(_, name)
+	if name == "ground" then NoteUse() end -- Ctrl flips count as use
+end)
+
+local function ResetIfIdle()
+	if InCombatLockdown() or menu:IsShown() then return end
+	if toggle:GetAttribute("ground") and GetTime() - lastUse >= IDLE_RESET then
+		toggle:SetAttribute("ground", nil)
+	end
+end
+
+C_Timer.NewTicker(5, ResetIfIdle)
+local combatWatcher = CreateFrame("Frame")
+combatWatcher:RegisterEvent("PLAYER_REGEN_DISABLED") -- combat starting
+combatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")  -- combat over
+combatWatcher:SetScript("OnEvent", ResetIfIdle)
