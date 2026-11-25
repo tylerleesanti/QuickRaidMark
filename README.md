@@ -4,7 +4,7 @@ A radial raid-marker menu for World of Warcraft. Hold a key, flick the mouse tow
 
 ## Setup
 
-Bind a key under **Options → Keybindings → AddOns → QuickRaidMark → "Quick Raid Mark Menu"**.
+Bind a key under **Options → Keybindings → AddOns → QuickRaidMark → "Quick Raid Mark Menu"**, or click the Skull button on the minimap to open the settings window and press **Change keybind** to go straight there. Drag the minimap button to move it.
 
 ## Using it
 
@@ -19,8 +19,9 @@ Bind a key under **Options → Keybindings → AddOns → QuickRaidMark → "Qui
 
 ### Ground markers
 
-- **Press Ctrl** while the menu is open to switch between raid and ground markers. The label under the menu shows which set is active, and the menu remembers it until you press Ctrl again. Raid markers are the default: after 5 minutes without using the menu, it goes back to raid markers.
-- On ground markers, releasing (or a number key) gives you a targeting circle: click the ground where the marker goes. Key 9 removes all ground markers.
+- **Press Ctrl** while the menu is open to switch between raid and ground markers. The label under the menu shows which set is active, and the menu remembers it until you press Ctrl again. Prefer Alt or Shift? Click the minimap button and pick one under **Raid/ground swap key** in the settings window. Raid markers are the default: after 5 minutes without using the menu, it goes back to raid markers.
+- On ground markers the menu turns dark brown and each marker sits on a coloured circle, so you can tell the sets apart at a glance.
+- On ground markers, releasing (or a number key) gives you a targeting circle: click the ground where the marker goes. Key 9 removes all ground markers. After using number keys, releasing over the clear slot still removes all ground markers.
 - The clear slot removes all ground markers.
 
 ## Notes

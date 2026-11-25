@@ -42,9 +42,14 @@ local LINE_OUTER  = 104  --...and end near the edge of the background
 -- The ring is placed clockwise starting at the top; the bottom slot clears.
 local CENTRE_MARKER = 8
 local MARKER_ORDER = { 7, 4, 5, 2, 0, 3, 6, 1 }
+local CLEAR_SLOT -- the ring slot holding 0 (clear)
+for i, m in ipairs(MARKER_ORDER) do
+	if m == 0 then CLEAR_SLOT = i end
+end
 
--- Pressing Ctrl while the menu is open switches between raid and ground
--- markers, and the menu remembers the set until Ctrl is pressed again. The icons stay where they are; each raid marker maps to the
+-- Pressing the swap key (Ctrl by default) while the menu is open switches
+-- between raid and ground markers, and the menu remembers the set until it
+-- is pressed again. The icons stay where they are; each raid marker maps to the
 -- ground marker with the same symbol (ground markers are numbered
 -- differently). The clear slot removes all ground markers.
 local GROUND_FOR_MARKER = {
@@ -75,6 +80,33 @@ local ICON_SCALE = {
 }
 local function IconSize(markerIndex, base)
 	return (base or ICON_SIZE) * (ICON_SCALE[markerIndex] or 1)
+end
+
+-- Ground-marker look, so the two sets can't be mistaken for each other:
+-- the background turns dark brown, the lines and slice outline turn blue,
+-- and every marker sits on a coloured pool of light, like the real ground
+-- markers.
+local RAID_BG   = { 0, 0, 0, BACKGROUND_ALPHA }
+local GROUND_BG = { 0.18, 0.11, 0.05, 0.6 } -- dark brown
+local RAID_LINE   = { 1, 1, 1, 0.12 }
+local GROUND_LINE = { 0.5, 0.8, 1, 0.3 }
+local GROUND_OUTLINE = { 0.45, 0.8, 1 } -- slice outline tint
+-- Colour of each ground marker's light (by raid marker index).
+local MARKER_COLOR = {
+	[1] = { 1.00, 0.92, 0.20 }, -- Star
+	[2] = { 1.00, 0.55, 0.10 }, -- Circle
+	[3] = { 0.80, 0.30, 1.00 }, -- Diamond
+	[4] = { 0.30, 1.00, 0.30 }, -- Triangle
+	[5] = { 0.75, 0.85, 1.00 }, -- Moon
+	[6] = { 0.25, 0.60, 1.00 }, -- Square
+	[7] = { 1.00, 0.25, 0.20 }, -- Cross
+	[8] = { 1.00, 1.00, 1.00 }, -- Skull
+}
+
+local groundMode = false -- which look the menu currently has
+
+local function SizeIcon(texture, size)
+	texture:SetSize(size, size)
 end
 
 local function MarkerTexture(markerIndex)
@@ -198,12 +230,15 @@ local wedge = {
 	Hide = function() wedgeFill:Hide() wedgeOutline:Hide() end,
 }
 
--- Faint divider lines between the markers.
+-- Faint divider lines between the markers (and, further down, the centre
+-- circle). Kept in `lines` so they can be recoloured for ground markers.
+local lines = {}
 for i = 0, #MARKER_ORDER - 1 do
 	local angle = math.rad(90 - 22.5 - i * (360 / #MARKER_ORDER))
 	local cosA, sinA = math.cos(angle), math.sin(angle)
 	local line = ringLayer:CreateLine(nil, "BORDER")
 	backdrop[#backdrop + 1] = line
+	lines[#lines + 1] = line
 	line:SetThickness(2)
 	line:SetColorTexture(1, 1, 1, 0.12)
 	line:SetStartPoint("CENTER", menu, cosA * LINE_INNER, sinA * LINE_INNER)
@@ -215,6 +250,43 @@ end
 ----------------------------------------------------------------------
 local slots = {}
 
+-- A glowing ground circle in the marker's colour at the foot of `icon`
+-- (it follows the icon as it moves and grows), squashed flat so it looks
+-- like it lies on the ground. It breathes slowly while shown. Hidden until
+-- ground markers. (Media/make_ground_pool.py regenerates the texture.)
+local GROUND_POOL_TEXTURE = "Interface\\AddOns\\QuickRaidMark\\Media\\GroundPool"
+local POOL_PULSE_TIME = 1.2 -- seconds from bright to dim
+
+local function MakeGroundPool(parent, icon, markerIndex)
+	local color = MARKER_COLOR[markerIndex]
+	if not color then return nil end -- the clear slot has none
+	local pool = parent:CreateTexture(nil, "ARTWORK", nil, -1) -- under the icon
+	-- a flat ellipse straddling the icon's bottom edge, as if it stands on it
+	pool:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", -9, 9)
+	pool:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 9, -8)
+	pool:SetTexture(GROUND_POOL_TEXTURE)
+	pool:SetVertexColor(color[1], color[2], color[3], 0.9)
+	pool:SetBlendMode("ADD")
+
+	local pulse = pool:CreateAnimationGroup()
+	pulse:SetLooping("BOUNCE")
+	local dim = pulse:CreateAnimation("Alpha")
+	dim:SetFromAlpha(1)
+	dim:SetToAlpha(0.55)
+	dim:SetDuration(POOL_PULSE_TIME)
+	dim:SetSmoothing("IN_OUT")
+	pool.pulse = pulse
+
+	pool:Hide()
+	return pool
+end
+
+local function ShowGroundPool(pool, shown)
+	if not pool then return end
+	pool:SetShown(shown)
+	if shown then pool.pulse:Play() else pool.pulse:Stop() end
+end
+
 for i, markerIndex in ipairs(MARKER_ORDER) do
 	local angle = math.rad(90 - (i - 1) * (360 / #MARKER_ORDER))
 	local cosA, sinA = math.cos(angle), math.sin(angle)
@@ -225,6 +297,9 @@ for i, markerIndex in ipairs(MARKER_ORDER) do
 	icon:SetSize(size, size)
 	icon:SetPoint("CENTER", menu, "CENTER", cosA * RING_RADIUS, sinA * RING_RADIUS)
 	icon:SetTexture(texturePath)
+
+	-- Pool of coloured light under the marker, shown on ground markers.
+	local pool = MakeGroundPool(ringLayer, icon, markerIndex)
 
 	-- Additive copy of the icon, shown while pointed at, to make it glow.
 	local glow = ringLayer:CreateTexture(nil, "OVERLAY")
@@ -243,7 +318,7 @@ for i, markerIndex in ipairs(MARKER_ORDER) do
 	keyLabel:SetTextColor(0.85, 0.85, 0.85)
 	keyLabel:SetShadowOffset(1, -1)
 
-	slots[i] = { icon = icon, glow = glow, size = size, keyLabel = keyLabel,
+	slots[i] = { icon = icon, glow = glow, pool = pool, size = size, keyLabel = keyLabel,
 		cos = cosA, sin = sinA, x = cosA * RING_RADIUS, y = sinA * RING_RADIUS }
 end
 
@@ -263,6 +338,7 @@ local centreIcon = centre:CreateTexture(nil, "ARTWORK")
 centreIcon:SetSize(CENTRE_ICON_SIZE, CENTRE_ICON_SIZE)
 centreIcon:SetPoint("CENTER")
 centreIcon:SetTexture(MarkerTexture(CENTRE_MARKER))
+local centrePool = MakeGroundPool(centre, centreIcon, CENTRE_MARKER)
 
 -- Plain thin circle where the divider lines start, drawn in the same
 -- style as the dividers (a ring of short line segments).
@@ -271,6 +347,7 @@ for i = 0, CENTRE_CIRCLE_SEGMENTS - 1 do
 	local a2 = math.rad((i + 1) * 360 / CENTRE_CIRCLE_SEGMENTS)
 	local seg = centre:CreateLine(nil, "BORDER") -- fades in with the centre
 	backdrop[#backdrop + 1] = seg
+	lines[#lines + 1] = seg
 	seg:SetThickness(2)
 	seg:SetColorTexture(1, 1, 1, 0.12)
 	seg:SetStartPoint("CENTER", menu, math.cos(a1) * LINE_INNER, math.sin(a1) * LINE_INNER)
@@ -296,13 +373,13 @@ local function SetHovered(slot)
 	end
 	if hoveredSlot and hoveredSlot > 0 then
 		local old = slots[hoveredSlot]
-		old.icon:SetSize(old.size, old.size)
+		SizeIcon(old.icon, old.size)
 		old.glow:Hide()
 	end
 	local ring = slot and slot > 0 and slot or nil -- the ring slot to light up
 	if ring then
 		local new = slots[ring]
-		new.icon:SetSize(new.size * HOVER_SCALE, new.size * HOVER_SCALE)
+		SizeIcon(new.icon, new.size * HOVER_SCALE)
 		new.glow:Show()
 		-- Slot 1 is the top; each later slot is 45 degrees further clockwise.
 		wedge:SetRotation(-math.rad((ring - 1) * (360 / #MARKER_ORDER)))
@@ -347,13 +424,13 @@ local function ApplyOpen(p)
 	-- Centre: quick fade and pop over the first part of the opening.
 	local c = EaseOut(math.min(1, p / 0.4))
 	centre:SetAlpha(c)
-	local cs = CENTRE_ICON_SIZE * (0.6 + 0.4 * c)
-	centreIcon:SetSize(cs, cs)
+	SizeIcon(centreIcon, CENTRE_ICON_SIZE * (0.6 + 0.4 * c))
 
 	-- Background: grows from the centre circle out to full size, darkening.
 	local d = LINE_INNER * 2 + (MENU_SIZE - LINE_INNER * 2) * e
 	disc:SetSize(d, d)
-	disc:SetColorTexture(0, 0, 0, BACKGROUND_ALPHA * (0.3 + 0.7 * e))
+	local bg = groundMode and GROUND_BG or RAID_BG
+	disc:SetColorTexture(bg[1], bg[2], bg[3], bg[4] * (0.3 + 0.7 * e))
 
 	-- Ring: fades in and slides outward, starting a moment later.
 	local r = EaseOut(math.max(0, math.min(1, (p - RING_DELAY) / (1 - RING_DELAY))))
@@ -365,6 +442,36 @@ local function ApplyOpen(p)
 	end
 end
 
+-- Switches the menu between the raid-marker and ground-marker look.
+-- (Plain textures only, so it works in combat.)
+local function ApplyMode(ground)
+	ground = not not ground
+	if ground == groundMode then return end
+	groundMode = ground
+
+	local line = ground and GROUND_LINE or RAID_LINE
+	for _, l in ipairs(lines) do
+		l:SetColorTexture(line[1], line[2], line[3], line[4])
+	end
+	if ground then
+		wedgeOutline:SetDesaturated(true)
+		wedgeOutline:SetVertexColor(GROUND_OUTLINE[1], GROUND_OUTLINE[2], GROUND_OUTLINE[3])
+	else
+		wedgeOutline:SetDesaturated(false)
+		wedgeOutline:SetVertexColor(1, 1, 1)
+	end
+
+	-- Show (or hide) the pool of light under every marker.
+	for _, s in ipairs(slots) do
+		ShowGroundPool(s.pool, ground)
+	end
+	ShowGroundPool(centrePool, ground)
+
+	-- Background colour and centre size: let a running opening animation
+	-- pick them up, otherwise set them straight away.
+	ApplyOpen(math.min(1, openElapsed / OPEN_TIME))
+end
+
 menu:SetScript("OnUpdate", function(self, elapsed)
 	if openElapsed < OPEN_TIME then
 		openElapsed = openElapsed + elapsed
@@ -374,15 +481,18 @@ menu:SetScript("OnUpdate", function(self, elapsed)
 	local cx, cy = self:GetCenter()
 	if not cx then return end
 	menuX, menuY = cx, cy
-	-- After a number key, releasing won't mark by direction, so stop
-	-- highlighting slices (the mouse is off pointing at mobs anyway).
-	if QuickRaidMarkToggle:GetAttribute("numberused") then
-		SetHovered(0)
-		return
-	end
 	local x, y = GetCursorPosition()
 	local scale = self:GetEffectiveScale()
-	SetHovered(SlotFromOffset(x / scale - cx, y / scale - cy))
+	local slot = SlotFromOffset(x / scale - cx, y / scale - cy)
+	-- After a number key, releasing won't mark by direction, so stop
+	-- highlighting slices (the mouse is off pointing at mobs anyway).
+	-- On ground markers the Clear slice still works, so it still lights up.
+	if QuickRaidMarkToggle:GetAttribute("numberused") then
+		if not (groundMode and slot == CLEAR_SLOT) then
+			slot = 0
+		end
+	end
+	SetHovered(slot)
 end)
 local menuOpenedAt = 0 -- GetTime() when the menu last opened
 
@@ -390,6 +500,11 @@ menu:HookScript("OnShow", function(self)
 	menuOpenedAt = GetTime()
 	openElapsed = 0
 	ApplyOpen(0)
+	-- (re)start the ground circles' breathing, in case it stopped while hidden
+	if groundMode then
+		for _, s in ipairs(slots) do ShowGroundPool(s.pool, true) end
+		ShowGroundPool(centrePool, true)
+	end
 	hoveredSlot = false
 	SetHovered(nil)
 end)
@@ -438,7 +553,7 @@ local function PlayPulse(slot)
 	end
 	pulseAnim:Stop()
 	pulseIcon:SetTexture(MarkerTexture(markerIndex))
-	pulse:SetSize(size, size)
+	SizeIcon(pulse, size)
 	pulse:ClearAllPoints()
 	pulse:SetPoint("CENTER", UIParent, "BOTTOMLEFT", menuX + ox, menuY + oy)
 	pulse:Show()
@@ -464,21 +579,31 @@ toggle:SetAttribute("wmcmd", WORLD_MARKER_CMD)
 toggle:SetAttribute("cwmcmd", CLEAR_WORLD_MARKER_CMD)
 SecureHandlerSetFrameRef(toggle, "screen", screen)
 
--- Pressing Ctrl while the menu is open flips it between raid and ground
--- markers (the "ground" attribute on the keybind button). The choice stays
--- until Ctrl flips it back, so the menu reopens on the set used last.
--- A secure state driver watches Ctrl, so this works in combat.
+-- Pressing the swap key (Ctrl by default; Alt or Shift can be chosen from
+-- the minimap button) while the menu is open flips it between raid and
+-- ground markers (the "ground" attribute on the keybind button). The choice
+-- stays until the swap key flips it back, so the menu reopens on the set
+-- used last. A secure state driver watches the key, so this works in combat.
+local SWAP_KEYS = {
+	CTRL  = { label = "Ctrl",  condition = "[mod:ctrl] down; up" },
+	ALT   = { label = "Alt",   condition = "[mod:alt] down; up" },
+	SHIFT = { label = "Shift", condition = "[mod:shift] down; up" },
+}
+local SWAP_KEY_ORDER = { "CTRL", "ALT", "SHIFT" }
+local swapKey = "CTRL"
+toggle:SetAttribute("swapprefix", "CTRL-") -- for the number-key bindings
+
 local ctrlWatcher = CreateFrame("Frame", "QuickRaidMarkCtrlWatcher", UIParent, "SecureHandlerStateTemplate")
 SecureHandlerSetFrameRef(ctrlWatcher, "toggle", toggle)
 SecureHandlerSetFrameRef(ctrlWatcher, "menu", menu)
-ctrlWatcher:SetAttribute("_onstate-ctrl", [[
+ctrlWatcher:SetAttribute("_onstate-swap", [[
 	if newstate ~= "down" then return end
 	local menu = self:GetFrameRef("menu")
 	if not menu:IsShown() then return end
 	local toggle = self:GetFrameRef("toggle")
 	toggle:SetAttribute("ground", not toggle:GetAttribute("ground"))
 ]])
-RegisterStateDriver(ctrlWatcher, "ctrl", "[mod:ctrl] down; up")
+RegisterStateDriver(ctrlWatcher, "swap", SWAP_KEYS[swapKey].condition)
 
 -- Shows which set the menu is on: a label just under the menu.
 local modeLabel = ringLayer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -492,12 +617,17 @@ hintLabel:SetShadowOffset(1, -1)
 hintLabel:SetTextColor(0.8, 0.8, 0.8)
 
 local function ShowMode(ground)
+	ApplyMode(ground)
 	if QuickRaidMarkToggle:GetAttribute("numberused") then
-		hintLabel:SetText("Release the key to close")
+		if ground then
+			hintLabel:SetText("Release to close, or over Clear to remove all")
+		else
+			hintLabel:SetText("Release the key to close")
+		end
 	elseif ground then
-		hintLabel:SetText("Press Ctrl for raid markers")
+		hintLabel:SetText("Press " .. SWAP_KEYS[swapKey].label .. " for raid markers")
 	else
-		hintLabel:SetText("Press Ctrl for ground markers")
+		hintLabel:SetText("Press " .. SWAP_KEYS[swapKey].label .. " for ground markers")
 	end
 	if ground then
 		modeLabel:SetText("Ground markers")
@@ -514,6 +644,26 @@ toggle:HookScript("OnAttributeChanged", function(_, name, value)
 		ShowMode(toggle:GetAttribute("ground"))
 	end
 end)
+
+-- Shared with MinimapButton.lua (its menu picks the swap key).
+local ADDON_NAME, ns = ...
+ns.SWAP_KEYS, ns.SWAP_KEY_ORDER = SWAP_KEYS, SWAP_KEY_ORDER
+function ns.GetSwapKey()
+	return swapKey
+end
+-- Changes the swap key and saves it. Secure setup, so not in combat:
+-- returns false (and changes nothing) if it can't be done right now.
+function ns.SetSwapKey(key)
+	if not SWAP_KEYS[key] then return false end
+	if InCombatLockdown() then return false end
+	swapKey = key
+	toggle:SetAttribute("swapprefix", key .. "-")
+	RegisterStateDriver(ctrlWatcher, "swap", SWAP_KEYS[key].condition)
+	ShowMode(toggle:GetAttribute("ground"))
+	QuickRaidMarkDB = QuickRaidMarkDB or {}
+	QuickRaidMarkDB.swapKey = key
+	return true
+end
 
 -- Runs (securely) before every click of the button, with `owner` = the menu.
 -- Returning false cancels the click; returning nothing lets the macro run.
@@ -548,10 +698,10 @@ SecureHandlerWrapScript(toggle, "OnClick", menu, ([[
 		owner:SetPoint("CENTER", screen, "BOTTOMLEFT", x, y)
 		owner:Show()
 		-- number keys 1-9 mark the unit under the mouse while the menu is open
-		-- (also bound with Ctrl, in case Ctrl is still held after flipping)
+		-- (also bound with the swap key, in case it's still held after flipping)
 		for i = 1, 9 do
 			owner:SetBindingClick(true, "" .. i, "QuickRaidMarkNumber" .. i)
-			owner:SetBindingClick(true, "CTRL-" .. i, "QuickRaidMarkNumber" .. i)
+			owner:SetBindingClick(true, self:GetAttribute("swapprefix") .. i, "QuickRaidMarkNumber" .. i)
 		end
 		if borrow then
 			self:SetAttribute("borrowed", true)
@@ -572,8 +722,14 @@ SecureHandlerWrapScript(toggle, "OnClick", menu, ([[
 		self:SetAttribute("macrotext", "/cleartarget")
 	end
 
+	-- Which set the menu is on (the swap key flips it; see ctrlWatcher).
+	local ground = self:GetAttribute("ground")
+
 	-- Number keys were used while the menu was open: just close it.
-	if self:GetAttribute("numberused") then
+	-- (On ground markers, releasing over the Clear slice still clears;
+	-- that's checked below once the slot is known.)
+	local numberused = self:GetAttribute("numberused")
+	if numberused and not ground then
 		owner:Hide()
 		if after == "" then return false end
 		return
@@ -591,8 +747,6 @@ SecureHandlerWrapScript(toggle, "OnClick", menu, ([[
 		return
 	end
 
-	-- Which set the menu is on (Ctrl flips it; see ctrlWatcher).
-	local ground = self:GetAttribute("ground")
 	local dx, dy = x - centreX, y - centreY
 	local slot, marker
 	if dx * dx + dy * dy < %d then -- centre (or a quick tap): Skull
@@ -624,6 +778,12 @@ SecureHandlerWrapScript(toggle, "OnClick", menu, ([[
 	end
 	end
 
+	-- After number keys on ground markers, only the Clear slice does anything.
+	if numberused and slot ~= %d then
+		if after == "" then return false end
+		return
+	end
+
 	local command
 	if not ground then
 		command = self:GetAttribute("tmcmd") .. " " .. marker
@@ -634,7 +794,7 @@ SecureHandlerWrapScript(toggle, "OnClick", menu, ([[
 	end
 	self:SetAttribute("lastslot", slot)
 	self:SetAttribute("macrotext", command .. after)
-]]):format(DEAD_ZONE * DEAD_ZONE, TAN_22_5, TAN_22_5))
+]]):format(DEAD_ZONE * DEAD_ZONE, TAN_22_5, TAN_22_5, CLEAR_SLOT))
 
 toggle:SetScript("PostClick", function(self, _, down)
 	-- (Only reads the attribute: changing attributes from normal addon code
@@ -733,7 +893,7 @@ for key = 1, #NUMBER_KEY_MARKER do
 	_G["QuickRaidMarkNumber" .. key]:HookScript("PreClick", NoteUse)
 end
 toggle:HookScript("OnAttributeChanged", function(_, name)
-	if name == "ground" then NoteUse() end -- Ctrl flips count as use
+	if name == "ground" then NoteUse() end -- swap-key flips count as use
 end)
 
 local function ResetIfIdle()
@@ -748,3 +908,20 @@ local combatWatcher = CreateFrame("Frame")
 combatWatcher:RegisterEvent("PLAYER_REGEN_DISABLED") -- combat starting
 combatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")  -- combat over
 combatWatcher:SetScript("OnEvent", ResetIfIdle)
+
+-- Saved swap key (see ns.SetSwapKey), applied once saved variables load.
+local savedLoader = CreateFrame("Frame")
+savedLoader:RegisterEvent("ADDON_LOADED")
+savedLoader:SetScript("OnEvent", function(self, event, name)
+	if event == "ADDON_LOADED" then
+		if name ~= ADDON_NAME then return end
+		self:UnregisterEvent("ADDON_LOADED")
+	end
+	local key = QuickRaidMarkDB and QuickRaidMarkDB.swapKey
+	if key and key ~= swapKey and not ns.SetSwapKey(key) then
+		-- (a /reload in combat) try again once combat ends
+		self:RegisterEvent("PLAYER_REGEN_ENABLED")
+	else
+		self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+	end
+end)
