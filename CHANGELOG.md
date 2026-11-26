@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0
+
+- **Default set in a group.** New setting in the minimap settings window: choose whether the menu starts on raid markers or ground markers while you're in a party or raid. Joining a group switches to your choice, and the 5-minute idle reset returns to it. On your own it's always raid markers.
+
 ## 1.2.1
 
 - **Ground markers need a group.** Ground markers only work in a party or raid, so when you're on your own the swap key does nothing and the menu stays on raid markers. Leaving a group switches the menu back to raid markers.

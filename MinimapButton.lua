@@ -1,8 +1,8 @@
 -- QuickRaidMark minimap button: hover for the add-on's name, click to open a
 -- small settings window. It shows the menu key with a button that opens the
--- game's keybinding settings at the "Quick Raid Mark Menu" binding, and lets
--- you pick Ctrl, Alt or Shift for switching marker sets. Drag the button to
--- move it around the minimap.
+-- game's keybinding settings at the "Quick Raid Mark Menu" binding, lets you
+-- pick Ctrl, Alt or Shift for switching marker sets, and which set the menu
+-- starts on in a party or raid. Drag the button to move it around the minimap.
 --
 -- Built on LibDataBroker + LibDBIcon (in Libs\), the standard minimap-button
 -- library, so button-collector add-ons (Leatrix Plus, MinimapButtonButton,
@@ -53,7 +53,7 @@ local window
 
 local function BuildWindow()
 	local f = CreateFrame("Frame", "QuickRaidMarkSettings", UIParent, "BackdropTemplate")
-	f:SetSize(270, 205)
+	f:SetSize(270, 255)
 	f:SetPoint("CENTER", 0, 100)
 	f:SetFrameStrata("DIALOG")
 	f:SetClampedToScreen(true)
@@ -107,7 +107,7 @@ local function BuildWindow()
 	swapNote:SetText("Press it while the menu is open to switch sets.\nGround markers need a party or raid.")
 	swapNote:SetTextColor(0.75, 0.75, 0.75)
 
-	local radios = {}
+	local radios, defaultRadios = {}, {}
 	local function Refresh()
 		local key = GetBindingKey(BINDING_ACTION)
 		if key then
@@ -121,25 +121,50 @@ local function BuildWindow()
 		for k, radio in pairs(radios) do
 			radio:SetChecked(k == current)
 		end
+		local groundDefault = ns.GetGroupDefaultGround()
+		for ground, radio in pairs(defaultRadios) do
+			radio:SetChecked(ground == groundDefault)
+		end
+	end
+
+	-- A radio button with its own label (and a click area that includes it).
+	local function MakeRadio(text, x, y, onClick)
+		local radio = CreateFrame("CheckButton", nil, f, "UIRadioButtonTemplate")
+		radio:SetSize(20, 20)
+		radio:SetPoint("TOPLEFT", x, y)
+		local label = radio:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		label:SetPoint("LEFT", radio, "RIGHT", 4, 0)
+		label:SetText(text)
+		radio:SetHitRectInsets(0, -(label:GetStringWidth() + 8), 0, 0)
+		radio:SetScript("OnClick", function()
+			onClick()
+			Refresh() -- re-check the right one either way
+		end)
+		return radio
 	end
 
 	for i, k in ipairs(ns.SWAP_KEY_ORDER) do
-		local radio = CreateFrame("CheckButton", nil, f, "UIRadioButtonTemplate")
-		radio:SetSize(20, 20)
-		radio:SetPoint("TOPLEFT", 24 + (i - 1) * 76, -150)
-		-- own label (and a wider click area that includes it)
-		local label = radio:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		label:SetPoint("LEFT", radio, "RIGHT", 4, 0)
-		label:SetText(ns.SWAP_KEYS[k].label)
-		radio:SetHitRectInsets(0, -(label:GetStringWidth() + 8), 0, 0)
-		radio:SetScript("OnClick", function()
+		radios[k] = MakeRadio(ns.SWAP_KEYS[k].label, 24 + (i - 1) * 76, -150, function()
 			if not ns.SetSwapKey(k) then
 				Print("The swap key can't be changed in combat. Try again after the fight.")
 			end
-			Refresh() -- re-check the right one either way
 		end)
-		radios[k] = radio
 	end
+
+	-- Default set in a party or raid (solo it's always raid markers).
+	local defaultHeader = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	defaultHeader:SetPoint("TOPLEFT", 24, -184)
+	defaultHeader:SetText("Default in a party or raid")
+
+	local function SetDefault(ground)
+		return function()
+			if not ns.SetGroupDefaultGround(ground) then
+				Print("The default can't be changed in combat. Try again after the fight.")
+			end
+		end
+	end
+	defaultRadios[false] = MakeRadio("Raid markers", 24, -206, SetDefault(false))
+	defaultRadios[true] = MakeRadio("Ground markers", 140, -206, SetDefault(true))
 
 	f:SetScript("OnShow", Refresh)
 	f:RegisterEvent("UPDATE_BINDINGS")

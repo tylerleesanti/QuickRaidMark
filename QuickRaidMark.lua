@@ -608,13 +608,18 @@ ctrlWatcher:SetAttribute("_onstate-swap", [[
 RegisterStateDriver(ctrlWatcher, "swap", SWAP_KEYS[swapKey].condition)
 
 -- Ground markers only work in a party or raid. Leaving the group (or
--- logging in solo) puts the menu back on raid markers. A secure state
--- driver, so it works in combat too.
+-- logging in solo) puts the menu back on raid markers; joining one puts it
+-- on the group default ("groupdefaultground", chosen in the settings
+-- window: raid markers unless set otherwise). A secure state driver, so it
+-- works in combat too.
 local groupWatcher = CreateFrame("Frame", "QuickRaidMarkGroupWatcher", UIParent, "SecureHandlerStateTemplate")
 SecureHandlerSetFrameRef(groupWatcher, "toggle", toggle)
 groupWatcher:SetAttribute("_onstate-group", [[
+	local toggle = self:GetFrameRef("toggle")
 	if newstate == "solo" then
-		self:GetFrameRef("toggle"):SetAttribute("ground", nil)
+		toggle:SetAttribute("ground", nil)
+	else
+		toggle:SetAttribute("ground", toggle:GetAttribute("groupdefaultground"))
 	end
 ]])
 RegisterStateDriver(groupWatcher, "group", "[group] grouped; solo")
@@ -677,6 +682,25 @@ function ns.GetSwapKey()
 end
 -- Changes the swap key and saves it. Secure setup, so not in combat:
 -- returns false (and changes nothing) if it can't be done right now.
+-- The set the menu starts on in a party or raid: true = ground markers.
+-- (Solo it's always raid markers.)
+function ns.GetGroupDefaultGround()
+	return toggle:GetAttribute("groupdefaultground") and true or false
+end
+-- Changes the group default and saves it; also switches the menu to it now
+-- if you're in a group. Not in combat: returns false if it can't be done.
+function ns.SetGroupDefaultGround(ground)
+	if InCombatLockdown() then return false end
+	ground = ground and true or nil
+	toggle:SetAttribute("groupdefaultground", ground)
+	if IsInGroup() and not menu:IsShown() then
+		toggle:SetAttribute("ground", ground)
+	end
+	QuickRaidMarkDB = QuickRaidMarkDB or {}
+	QuickRaidMarkDB.groupDefaultGround = ground or false
+	return true
+end
+
 function ns.SetSwapKey(key)
 	if not SWAP_KEYS[key] then return false end
 	if InCombatLockdown() then return false end
@@ -961,8 +985,10 @@ end)
 
 local function ResetIfIdle()
 	if InCombatLockdown() or menu:IsShown() then return end
-	if toggle:GetAttribute("ground") and GetTime() - lastUse >= IDLE_RESET then
-		toggle:SetAttribute("ground", nil)
+	-- the default set: the group default in a party or raid, else raid markers
+	local want = IsInGroup() and toggle:GetAttribute("groupdefaultground") or nil
+	if (toggle:GetAttribute("ground") or nil) ~= want and GetTime() - lastUse >= IDLE_RESET then
+		toggle:SetAttribute("ground", want)
 	end
 end
 
@@ -972,7 +998,8 @@ combatWatcher:RegisterEvent("PLAYER_REGEN_DISABLED") -- combat starting
 combatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")  -- combat over
 combatWatcher:SetScript("OnEvent", ResetIfIdle)
 
--- Saved swap key (see ns.SetSwapKey), applied once saved variables load.
+-- Saved settings (swap key, group default), applied once saved variables
+-- load.
 local savedLoader = CreateFrame("Frame")
 savedLoader:RegisterEvent("ADDON_LOADED")
 savedLoader:SetScript("OnEvent", function(self, event, name)
@@ -980,8 +1007,15 @@ savedLoader:SetScript("OnEvent", function(self, event, name)
 		if name ~= ADDON_NAME then return end
 		self:UnregisterEvent("ADDON_LOADED")
 	end
-	local key = QuickRaidMarkDB and QuickRaidMarkDB.swapKey
-	if key and key ~= swapKey and not ns.SetSwapKey(key) then
+	local db = QuickRaidMarkDB or {}
+	local ok = true
+	if db.swapKey and db.swapKey ~= swapKey then
+		ok = ns.SetSwapKey(db.swapKey) and ok
+	end
+	if db.groupDefaultGround and not ns.GetGroupDefaultGround() then
+		ok = ns.SetGroupDefaultGround(true) and ok
+	end
+	if not ok then
 		-- (a /reload in combat) try again once combat ends
 		self:RegisterEvent("PLAYER_REGEN_ENABLED")
 	else
